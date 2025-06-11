@@ -143,6 +143,9 @@ export const useSequentialRecordingsData = (
               simRow,
             );
 
+            console.log("Simultaneous pairs")
+            console.log(recordings);
+
             // For each individual recording
             for (const recId of recordings) {
               if (cancelled) return;
@@ -151,6 +154,10 @@ export const useSequentialRecordingsData = (
                 // Get stimulus and response references
                 const stimRef = (stimulusRefs as any)[recId];
                 const respRef = (responseRefs as any)[recId];
+
+                console.log("Processing recording", recId);
+                console.log("stimRef", stimRef);
+                console.log("respRef", respRef);
 
                 if (!stimRef || !respRef) {
                   continue;
@@ -161,43 +168,69 @@ export const useSequentialRecordingsData = (
                 let stimulusPath: string;
                 let responsePath: string;
 
-                if (Array.isArray(stimRef) && stimRef.length >= 3) {
-                  const stimTimeseriesRef = stimRef[2];
+                // Helper function to resolve object references to paths
+                const resolveObjectReference = (ref: any, recId: number, type: 'stimulus' | 'response'): string | null => {
+                  if (Array.isArray(ref) && ref.length >= 3) {
+                    const timeseriesRef = ref[2];
 
-                  // Try to decode the Uint8Array object reference
-                  if (stimTimeseriesRef instanceof Uint8Array) {
-                    // Construct the stimulus path based on the recording ID
-                    // E.g.: Recording ID 3 maps to stimulus-04-ch-0 (ID + 1)
-                    stimulusPath = `/stimulus/presentation/stimulus-${String(recId + 1).padStart(2, "0")}-ch-0`;
-                  } else {
-                    stimulusPath = String(stimTimeseriesRef);
+                    // Handle Uint8Array object references (typically for local data)
+                    if (timeseriesRef instanceof Uint8Array) {
+                      const pathPrefix = type === 'stimulus' ? '/stimulus/presentation/stimulus' : '/acquisition/current_clamp-response';
+                      return `${pathPrefix}-${String(recId + 1).padStart(2, "0")}-ch-0`;
+                    }
+
+                    // Handle string references
+                    if (typeof timeseriesRef === 'string') {
+                      return timeseriesRef;
+                    }
+
+                    // Handle object references (for remote data)
+                    if (typeof timeseriesRef === 'object' && timeseriesRef !== null) {
+                      // Try to extract path from object reference
+                      if ('path' in timeseriesRef) {
+                        return String(timeseriesRef.path);
+                      }
+                      if ('name' in timeseriesRef) {
+                        return String(timeseriesRef.name);
+                      }
+                      // For remote data, construct path based on recording ID as fallback
+                      const pathPrefix = type === 'stimulus' ? '/stimulus/presentation/stimulus' : '/acquisition/current_clamp-response';
+                      return `${pathPrefix}-${String(recId + 1).padStart(2, "0")}-ch-0`;
+                    }
+
+                    // Fallback: convert to string
+                    return String(timeseriesRef);
                   }
-                } else {
+
+                  // Handle direct string references
+                  if (typeof ref === 'string') {
+                    return ref;
+                  }
+
+                  return null;
+                };
+
+                const resolvedStimulusPath = resolveObjectReference(stimRef, recId, 'stimulus');
+                const resolvedResponsePath = resolveObjectReference(respRef, recId, 'response');
+
+                if (!resolvedStimulusPath) {
                   console.warn(
-                    `Unexpected stimulus ref structure for ${recId}:`,
+                    `Could not resolve stimulus path for recording ${recId}:`,
                     stimRef,
                   );
                   continue;
                 }
 
-                if (Array.isArray(respRef) && respRef.length >= 3) {
-                  const respTimeseriesRef = respRef[2];
-
-                  // Try to decode the Uint8Array object reference
-                  if (respTimeseriesRef instanceof Uint8Array) {
-                    // Construct the response path based on the recording ID
-                    // E.g.: Recording ID 3 maps to current_clamp-response-04-ch-0 (ID + 1)
-                    responsePath = `/acquisition/current_clamp-response-${String(recId + 1).padStart(2, "0")}-ch-0`;
-                  } else {
-                    responsePath = String(respTimeseriesRef);
-                  }
-                } else {
+                if (!resolvedResponsePath) {
                   console.warn(
-                    `Unexpected response ref structure for ${recId}:`,
+                    `Could not resolve response path for recording ${recId}:`,
                     respRef,
                   );
                   continue;
                 }
+
+                stimulusPath = resolvedStimulusPath;
+                responsePath = resolvedResponsePath;
 
                 // Load timeseries data for stimulus and response
                 const [stimulusData, responseData] = await Promise.all([
@@ -215,7 +248,15 @@ export const useSequentialRecordingsData = (
                   ),
                 ]);
 
+                // Only add successful pairs
                 if (stimulusData && responseData) {
+                  console.log(
+                    `Successfully loaded pair ${pairId}:`,
+                    `type: ${stimulusType}`,
+                    `stimulusPath: ${stimulusPath}`,
+                    `responsePath: ${responsePath}`,
+                  );
+
                   pairs.push({
                     pairId,
                     stimulusType,
@@ -225,6 +266,14 @@ export const useSequentialRecordingsData = (
                     responseData,
                   });
                   pairId++;
+                } else {
+                  // Log failed attempts for debugging
+                  console.warn(
+                    `Failed to load data for recording ${recId}:`,
+                    `type: ${stimulusType}`,
+                    `stimulusPath: ${stimulusPath} (${stimulusData ? "✅" : "❌"})`,
+                    `responsePath: ${responsePath} (${responseData ? "✅" : "❌"})`,
+                  );
                 }
               } catch (error) {
                 console.warn(`Failed to load pair ${pairId}:`, error);
@@ -297,13 +346,13 @@ const loadTimeseriesData = async (
     const client =
       downsampleFactor > 1
         ? await DownsampledChunkedTimeseriesClient.create(nwbUrl, group, {
-            downsampleFactor,
-            downsampleMethod: downsampleMethod as "decimate" | "lttb",
-            chunkSizeSec: 1,
-          })
+          downsampleFactor,
+          downsampleMethod: downsampleMethod as "decimate" | "lttb",
+          chunkSizeSec: 1,
+        })
         : await ChunkedTimeseriesClient.create(nwbUrl, group, {
-            chunkSizeSec: 1,
-          });
+          chunkSizeSec: 1,
+        });
 
     // Determine time range to load
     const startTime = timeRange?.start ?? client.startTime;
