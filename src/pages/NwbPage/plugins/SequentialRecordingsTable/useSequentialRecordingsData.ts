@@ -39,6 +39,8 @@ export const useSequentialRecordingsData = (
           throw new Error("Could not load stimulus types");
         }
 
+        console.log("Stimulus types data:", stimulusTypesData);
+
         // Step 2: Load simultaneous recordings indices
         const simultaneousRecordingsData = await getHdf5DatasetData(
           nwbUrl,
@@ -50,6 +52,9 @@ export const useSequentialRecordingsData = (
           `${path}/simultaneous_recordings_index`,
           {},
         );
+
+        console.log("Simultaneous recordings data:", simultaneousRecordingsData);
+        console.log("Simultaneous recordings index:", simultaneousRecordingsIndex);
 
         if (!simultaneousRecordingsData || !simultaneousRecordingsIndex) {
           throw new Error("Could not load simultaneous recordings data");
@@ -67,6 +72,9 @@ export const useSequentialRecordingsData = (
           {},
         );
 
+        console.log("Recordings data:", recordingsData);
+        console.log("Recordings index:", recordingsIndex);
+
         if (!recordingsData || !recordingsIndex) {
           throw new Error("Could not load recordings data");
         }
@@ -82,6 +90,9 @@ export const useSequentialRecordingsData = (
           "/general/intracellular_ephys/intracellular_recordings/responses/response",
           {},
         );
+
+        console.log("Stimulus references:", stimulusRefs);
+        console.log("Response references:", responseRefs);
 
         if (!stimulusRefs || !responseRefs) {
           throw new Error("Could not load stimulus/response references");

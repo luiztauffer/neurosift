@@ -63,6 +63,7 @@ const SequentialRecordingsPlotly: React.FC<Props> = ({
     [appliedDownsampleMethod, appliedDownsampleFactor],
   );
 
+  console.log("Path: ", path)
   const { pairs, stimulusTypes, isLoading, error } =
     useSequentialRecordingsData(
       nwbUrl,
